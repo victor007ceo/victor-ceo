@@ -12,7 +12,7 @@ export function Layout() {
       <BackgroundEffect />
       
       {/* Top Navigation / App Title */}
-      <header className="relative z-20 w-full border-b border-white/20 bg-white/[0.03] backdrop-blur-xl shadow-2xl">
+      <header className="sticky top-0 z-50 w-full border-b border-white/20 bg-white/[0.03] backdrop-blur-xl shadow-2xl">
         <div className="flex justify-between items-center max-w-[1400px] mx-auto px-4 lg:px-8 py-4">
           <div className="flex flex-col gap-0.5 group">
              <h1 className="text-white/40 font-mono text-[10px] tracking-[0.3em] uppercase group-hover:text-cyan-400/80 transition-colors">VICTOR.CEO</h1>
@@ -57,7 +57,7 @@ export function Layout() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
+              className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm md:hidden"
               onClick={() => setIsMenuOpen(false)}
             />
             <motion.div
@@ -65,7 +65,7 @@ export function Layout() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed top-0 right-0 bottom-0 w-64 z-50 bg-white/[0.03] backdrop-blur-xl border-l border-white/20 shadow-2xl md:hidden flex flex-col p-6"
+              className="fixed top-0 right-0 bottom-0 w-64 z-[70] bg-white/[0.03] backdrop-blur-xl border-l border-white/20 shadow-2xl md:hidden flex flex-col p-6"
             >
               <div className="flex justify-end mb-8">
                 <button 

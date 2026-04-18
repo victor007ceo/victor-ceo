@@ -7,14 +7,14 @@ export function InDevelopment() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md"
+      className="fixed inset-x-0 bottom-0 top-[73px] z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-md"
     >
       {/* Glass Panel */}
       <motion.div
         initial={{ scale: 0.9, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         transition={{ delay: 0.2, duration: 0.5, ease: [0.34, 1.56, 0.64, 1] }}
-        className="relative max-w-xl mx-4 p-12 rounded-2xl border border-white/20 bg-white/[0.02] backdrop-blur-xl shadow-2xl"
+        className="relative w-full max-w-xl p-8 md:p-12 rounded-2xl border border-white/20 bg-white/[0.02] backdrop-blur-xl shadow-2xl max-h-full overflow-y-auto"
       >
         {/* Corner accents */}
         <div className="absolute top-3 left-3 w-8 h-8 border-l-2 border-t-2 border-cyan-400/40" />
