@@ -1,0 +1,190 @@
+import React, { useState, useCallback, useMemo } from "react";
+import { Cosmos3DOrbitGallery } from "../components/Cosmos3DOrbitGallery";
+import { AnimatePresence, motion } from "motion/react";
+import { ImageViewer } from "../components/ImageViewer";
+import { CosmicCometShader } from "../components/CosmicCometShader";
+
+const galleryImages = [
+  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775520750/Synapses_2k_jpg_zwfdso.jpg", title: "Synapses" },
+  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775520749/New_beginnings_2k_jpg_si1uje.jpg", title: "New beginnings" },
+  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775520749/11.7_dhzshk.jpg", title: "11.7" },
+  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775520749/the_rising_2k_jpg_ozbdmt.jpg", title: "The rising" },
+  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775520749/a_leap_of_faith_2k_jpg_ny8nqg.jpg", title: "A leap of faith" },
+  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775520732/Budha_2k_jpg_z3xdyz.jpg", title: "Finally at peace" },
+  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775520743/reaching_m2ysyd.jpg", title: "Reaching for you" },
+  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775603942/lust_2k_jpg_wbhou2.jpg", title: "Lust" },
+];
+
+export function TheExhibition() {
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+  const [showViewer, setShowViewer] = useState(false);
+
+  // Stable reference — prevents Three.js scene from remounting on every render
+  const imageUrls = useMemo(() => galleryImages.map(g => g.url), []);
+
+  // 3D sphere click → fly camera in, then open viewer
+  const handleSphereClick = useCallback((i: number) => {
+    setFocusedIndex(i);
+    setViewerIndex(i);
+  }, []);
+
+  // Gallery grid click → open viewer directly (no fly-in)
+  const handleGridClick = useCallback((i: number) => {
+    setViewerIndex(i);
+    setShowViewer(true);
+  }, []);
+
+  // Three.js fly-in complete → show the 2D viewer overlay
+  const handleFlyInComplete = useCallback(() => {
+    setShowViewer(true);
+  }, []);
+
+  // User closes the viewer → hide overlay, start fly-out if we flew in
+  const handleViewerClose = useCallback(() => {
+    setShowViewer(false);
+    if (focusedIndex !== null) {
+      // Was a 3D fly-in — trigger fly-out
+      setFocusedIndex(null);
+    } else {
+      // Was a grid click — just close
+      setViewerIndex(null);
+    }
+  }, [focusedIndex]);
+
+  // Three.js fly-out complete → reset everything
+  const handleFlyOutComplete = useCallback(() => {
+    setViewerIndex(null);
+  }, []);
+
+  return (
+    <main className="relative z-10 flex-1 w-full flex flex-col">
+      {/* ═══ HERO: 3D ORBIT GALLERY ══════════════════════════════════ */}
+      <section className="relative w-full h-[100vh] -mt-[73px]">
+        {/* Overlay text */}
+        <div className="absolute top-24 left-0 right-0 z-10 p-6 pointer-events-none">
+          <motion.h1
+            initial={{ opacity: 0, y: 30 }}
+            animate={focusedIndex !== null ? { opacity: 0, y: -20 } : { opacity: 1, y: 0 }}
+            transition={{ duration: focusedIndex !== null ? 0.8 : 1.2, ease: [0.22, 1, 0.36, 1] }}
+            className="max-w-[750px] mx-auto text-white text-center px-6 md:text-6xl text-4xl text-balance tracking-tight font-normal leading-[1.15]"
+            style={{ fontFamily: "'Instrument Serif', serif" }}
+          >
+            Our stories are united. They live on beyond the walls and doors of our souls. There is only one take, capture yours.
+          </motion.h1>
+        </div>
+
+        {/* Bottom gradient fade */}
+        <div className="absolute bottom-0 left-0 right-0 h-69 bg-gradient-to-t from-[#010101] to-transparent z-10 pointer-events-none" />
+
+        {/* Subtle vignette */}
+        <div
+          className="absolute inset-0 z-[5] pointer-events-none"
+          style={{ background: "radial-gradient(ellipse at center, transparent 40%, rgba(1,1,1,0.7) 100%)" }}
+        />
+
+        {/* Cosmic comet shader - deepest background layer */}
+        <div className="absolute inset-0 z-[1] opacity-60 pointer-events-none">
+          <CosmicCometShader />
+        </div>
+
+        {/* 3D Orbit Gallery - above shader */}
+        <div className="absolute inset-0 z-[3]">
+          <Cosmos3DOrbitGallery
+            images={imageUrls}
+            onImageClick={handleSphereClick}
+            focusedIndex={focusedIndex}
+            onFlyInComplete={handleFlyInComplete}
+            onFlyOutComplete={handleFlyOutComplete}
+          />
+        </div>
+
+        {/* Bottom scroll zone gradient - hints at the scrollable area */}
+        <div
+          className="absolute bottom-0 left-0 right-0 z-[15] h-[30%]"
+          style={{ background: "linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.35) 50%, rgba(0,0,0,0.7) 100%)" }}
+        />
+
+        {/* Scroll indicator */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: focusedIndex !== null ? 0 : 1 }}
+          transition={{ delay: focusedIndex !== null ? 0 : 2, duration: focusedIndex !== null ? 0.5 : 1 }}
+          className="absolute bottom-[16%] left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 pointer-events-none"
+        >
+          <span className="text-[9px] font-mono text-white/20 tracking-widest uppercase">Scroll to explore</span>
+          <motion.div
+            animate={{ y: [0, 6, 0] }}
+            transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}
+            className="w-4 h-7 rounded-full border border-white/15 flex items-start justify-center p-1"
+          >
+            <div className="w-1 h-1.5 rounded-full bg-white/30" />
+          </motion.div>
+        </motion.div>
+      </section>
+
+      {/* ═══ GALLERY GRID ═══════════════════════════════════════════ */}
+      <section className="relative w-full max-w-[1400px] mx-auto px-4 lg:px-8 py-24">
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.8 }}
+          className="text-center mb-16"
+        >
+          <h2
+            className="text-3xl md:text-5xl text-white/90 tracking-tight mb-4"
+            style={{ fontFamily: "'Instrument Serif', serif" }}
+          >
+            The Gallery
+          </h2>
+          <p className="text-[11px] font-mono text-white/30 tracking-[0.2em] uppercase">
+            A curated collection of experiences
+          </p>
+        </motion.div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {galleryImages.map((img, i) => (
+            <motion.div
+              key={img.title}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-50px" }}
+              transition={{ duration: 0.6, delay: i * 0.08 }}
+              className="group relative aspect-[1754/2481] overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02] cursor-pointer"
+              onClick={() => handleGridClick(i)}
+            >
+              <img
+                src={img.url}
+                alt={img.title}
+                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                loading="lazy"
+                crossOrigin="anonymous"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="absolute bottom-3 left-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-500 translate-y-2 group-hover:translate-y-0">
+                <span className="text-[9px] font-mono text-white/60 tracking-widest uppercase">
+                  {img.title}
+                </span>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      {/* ═══ FULLSCREEN IMAGE VIEWER ══════════════════════════════ */}
+      <AnimatePresence>
+        {showViewer && viewerIndex !== null && (
+          <ImageViewer
+            key={viewerIndex}
+            src={galleryImages[viewerIndex].url}
+            index={viewerIndex}
+            title={galleryImages[viewerIndex].title}
+            onClose={handleViewerClose}
+            skipEntrance={focusedIndex !== null}
+          />
+        )}
+      </AnimatePresence>
+    </main>
+  );
+}
