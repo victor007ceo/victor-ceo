@@ -172,11 +172,18 @@ export function Cosmos3DOrbitGallery({
     scene.add(vignetteQuad);
 
     // ── Interaction state ──
+    const MIN_CAMERA_DISTANCE = 5;
+    const MAX_CAMERA_DISTANCE = 25;
+    const PINCH_ZOOM_SENSITIVITY = 1.15;
     let isDragging = false;
     let dragDistance = 0;
     let prevMousePos = { x: 0, y: 0 };
     let rotVelX = 0;
     let rotVelY = 0.001;
+    let hadMultiPointerGesture = false;
+    let pinchStartDistance = 0;
+    let pinchStartCameraDistance = camera.position.length();
+    const activePointers = new Map<number, { x: number; y: number }>();
 
     // ── Camera fly state ──
     let state: GalleryState = "IDLE";
@@ -220,15 +227,79 @@ export function Cosmos3DOrbitGallery({
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
+    const getPinchDistance = () => {
+      const pointers = Array.from(activePointers.values());
+      if (pointers.length < 2) return 0;
+      const [a, b] = pointers;
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    };
+
+    const zoomCameraToDistance = (distance: number) => {
+      const nextDistance = THREE.MathUtils.clamp(
+        distance,
+        MIN_CAMERA_DISTANCE,
+        MAX_CAMERA_DISTANCE
+      );
+      camera.position.normalize().multiplyScalar(nextDistance);
+      camera.lookAt(HOME_LOOK);
+    };
+
+    const beginPinchGesture = () => {
+      pinchStartDistance = getPinchDistance();
+      pinchStartCameraDistance = camera.position.length();
+      hadMultiPointerGesture = true;
+      isDragging = false;
+      dragDistance = 8;
+      rotVelX = 0;
+      rotVelY = 0;
+    };
+
+    const updatePinchZoom = () => {
+      if (pinchStartDistance <= 0) return;
+      const currentDistance = getPinchDistance();
+      if (currentDistance <= 0) return;
+      const zoomRatio = pinchStartDistance / currentDistance;
+      zoomCameraToDistance(
+        pinchStartCameraDistance * Math.pow(zoomRatio, PINCH_ZOOM_SENSITIVITY)
+      );
+    };
+
     const onPointerDown = (e: PointerEvent) => {
       if (state !== "IDLE") return;
+      if (e.pointerType !== "mouse") e.preventDefault();
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch {
+        // Pointer capture can fail if the browser has already cancelled the gesture.
+      }
+
+      activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (activePointers.size >= 2) {
+        beginPinchGesture();
+        return;
+      }
+
+      hadMultiPointerGesture = false;
       isDragging = true;
       dragDistance = 0;
       prevMousePos = { x: e.clientX, y: e.clientY };
     };
 
     const onPointerMove = (e: PointerEvent) => {
-      if (!isDragging || state !== "IDLE") return;
+      if (state !== "IDLE") return;
+
+      if (activePointers.has(e.pointerId)) {
+        activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+
+      if (activePointers.size >= 2) {
+        e.preventDefault();
+        updatePinchZoom();
+        return;
+      }
+
+      if (!isDragging || activePointers.size !== 1) return;
       const dx = e.clientX - prevMousePos.x;
       const dy = e.clientY - prevMousePos.y;
       dragDistance += Math.abs(dx) + Math.abs(dy);
@@ -237,8 +308,20 @@ export function Cosmos3DOrbitGallery({
       prevMousePos = { x: e.clientX, y: e.clientY };
     };
 
-    const onPointerUp = (e: PointerEvent) => {
-      const wasClick = dragDistance < 6;
+    const finishPointer = (e: PointerEvent, allowClick: boolean) => {
+      const wasClick =
+        allowClick &&
+        !hadMultiPointerGesture &&
+        activePointers.size === 1 &&
+        dragDistance < 6;
+
+      activePointers.delete(e.pointerId);
+      try {
+        el.releasePointerCapture(e.pointerId);
+      } catch {
+        // It is fine if capture was already released by the browser.
+      }
+
       isDragging = false;
 
       if (
@@ -257,14 +340,30 @@ export function Cosmos3DOrbitGallery({
           if (idx !== undefined) onImageClickRef.current(idx);
         }
       }
+
+      if (activePointers.size === 0) {
+        hadMultiPointerGesture = false;
+        pinchStartDistance = 0;
+      }
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      finishPointer(e, true);
+    };
+
+    const onPointerCancel = (e: PointerEvent) => {
+      finishPointer(e, false);
+    };
+
+    const onPointerLeave = (e: PointerEvent) => {
+      if (e.pointerType === "mouse") finishPointer(e, false);
     };
 
     const onWheel = (e: WheelEvent) => {
       if (state !== "IDLE") return;
       e.preventDefault();
       const z = camera.position.length();
-      const newZ = THREE.MathUtils.clamp(z + e.deltaY * 0.01, 5, 25);
-      camera.position.normalize().multiplyScalar(newZ);
+      zoomCameraToDistance(z + e.deltaY * 0.01);
     };
 
     const el = renderer.domElement;
@@ -272,9 +371,8 @@ export function Cosmos3DOrbitGallery({
     el.addEventListener("pointerdown", onPointerDown);
     el.addEventListener("pointermove", onPointerMove);
     el.addEventListener("pointerup", onPointerUp);
-    el.addEventListener("pointerleave", () => {
-      isDragging = false;
-    });
+    el.addEventListener("pointercancel", onPointerCancel);
+    el.addEventListener("pointerleave", onPointerLeave);
     el.addEventListener("wheel", onWheel, { passive: false });
 
     // ── Mobile touch ──
@@ -285,7 +383,7 @@ export function Cosmos3DOrbitGallery({
       touchStartInScrollZone = touchY / rect.height >= 0.8;
     };
     const onTouchMove = (e: TouchEvent) => {
-      if (!touchStartInScrollZone) e.preventDefault();
+      if (e.touches.length >= 2 || !touchStartInScrollZone) e.preventDefault();
     };
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: false });
@@ -301,6 +399,7 @@ export function Cosmos3DOrbitGallery({
 
     // ── Hover cursor ──
     const onHoverMove = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") return;
       if (state !== "IDLE") {
         el.style.cursor = "default";
         return;
@@ -488,6 +587,8 @@ export function Cosmos3DOrbitGallery({
       el.removeEventListener("pointerdown", onPointerDown);
       el.removeEventListener("pointermove", onPointerMove);
       el.removeEventListener("pointerup", onPointerUp);
+      el.removeEventListener("pointercancel", onPointerCancel);
+      el.removeEventListener("pointerleave", onPointerLeave);
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("pointermove", onHoverMove);
       el.removeEventListener("touchstart", onTouchStart);
