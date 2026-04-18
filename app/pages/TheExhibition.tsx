@@ -70,7 +70,7 @@ export function TheExhibition() {
             className="max-w-[750px] mx-auto text-white text-center px-6 md:text-6xl text-4xl text-balance tracking-tight font-normal leading-[1.15]"
             style={{ fontFamily: "'Instrument Serif', serif" }}
           >
-            Our stories are united. They live on beyond the walls and doors of our souls. There is only one take, capture yours.
+            Our stories are united. They live on beyond the walls and doors of our souls. There is only one take. Capture yours.
           </motion.h1>
         </div>
 
