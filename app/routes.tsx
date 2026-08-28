@@ -1,11 +1,8 @@
 import React from "react";
 import { createBrowserRouter, Navigate } from "react-router";
 import { Layout } from "./Layout";
-import { Home } from "./pages/Home";
 import { PreRelease } from "./pages/PreRelease";
 import { TheExhibition } from "./pages/TheExhibition";
-import { Radar } from "./pages/Radar";
-import { Watchlist } from "./pages/Watchlist";
 
 export const router = createBrowserRouter([
   {
@@ -14,27 +11,19 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        Component: Home,
-      },
-      {
-        path: "pre-release",
-        Component: PreRelease,
-      },
-      {
-        path: "exhibition",
         Component: TheExhibition,
       },
       {
-        path: "radar",
-        Component: Radar,
+        path: "exclusive-access",
+        Component: PreRelease,
       },
       {
-        path: "watchlist",
-        Component: Watchlist,
+        path: "pre-release",
+        element: <Navigate to="/exclusive-access" replace />,
       },
       {
-        path: "execution",
-        element: <Navigate to="/watchlist" replace />,
+        path: "exhibition",
+        element: <Navigate to="/" replace />,
       },
       {
         path: "*",
