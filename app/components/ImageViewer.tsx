@@ -2,16 +2,16 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { X, Maximize, Minimize, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { pictureSrc } from "../exhibition/data/pictures";
 
 interface ImageViewerProps {
   src: string;
   index: number;
   onClose: () => void;
-  skipEntrance?: boolean; // when true, appears instantly (used after 3D fly-in blackout)
   title?: string; // artwork title
 }
 
-export function ImageViewer({ src, index, onClose, skipEntrance = false, title }: ImageViewerProps) {
+export function ImageViewer({ src, index, onClose, title }: ImageViewerProps) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -21,8 +21,8 @@ export function ImageViewer({ src, index, onClose, skipEntrance = false, title }
   const isPanning = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
 
-  // High-res version
-  const hiResSrc = src.replace(/w=\d+/, "w=2400");
+  // High-res version: the same Cloudinary picture, sized for the focus view.
+  const hiResSrc = pictureSrc(src, "focus");
 
   // Clamp pan so image always stays partially visible
   const clampPan = useCallback((px: number, py: number, z: number) => {
@@ -122,18 +122,18 @@ export function ImageViewer({ src, index, onClose, skipEntrance = false, title }
     }
   }, [zoom, resetView]);
 
-  // Entrance timings: skip animations when coming from 3D fly-in blackout
-  const entranceDuration = skipEntrance ? 0 : 0.4;
-  const entranceDelay = skipEntrance ? 0 : 0.15;
-  const imageDelay = skipEntrance ? 0 : 0.1;
-  const imageDuration = skipEntrance ? 0 : 0.5;
-  const hintDelay = skipEntrance ? 0.3 : 0.6;
+  // Entrance timings.
+  const entranceDuration = 0.4;
+  const entranceDelay = 0.15;
+  const imageDelay = 0.1;
+  const imageDuration = 0.5;
+  const hintDelay = 0.6;
 
   return createPortal(
     <AnimatePresence>
       <motion.div
         ref={containerRef}
-        initial={{ opacity: skipEntrance ? 1 : 0 }}
+        initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: entranceDuration, ease: [0.22, 1, 0.36, 1] }}
@@ -141,17 +141,17 @@ export function ImageViewer({ src, index, onClose, skipEntrance = false, title }
       >
         {/* ── Top bar ── */}
         <motion.div
-          initial={{ opacity: 0, y: skipEntrance ? 0 : -20 }}
+          initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: entranceDelay, duration: entranceDuration }}
           className="relative z-10 flex items-center justify-between px-5 py-4 bg-white/[0.04] border-b border-white/[0.08] backdrop-blur-xl"
         >
           {/* Left: piece info */}
           <div className="flex items-center gap-4">
-            <span className="text-[10px] font-mono text-cyan-400/80 tracking-widest uppercase">
+            <span className="text-xs font-mono text-cyan-300 tracking-widest uppercase">
               {title || `Piece ${String(index + 1).padStart(2, "0")}`}
             </span>
-            <span className="text-[10px] font-mono text-white/20">
+            <span className="text-xs font-mono text-white/60">
               {Math.round(zoom * 100)}%
             </span>
           </div>
@@ -160,21 +160,21 @@ export function ImageViewer({ src, index, onClose, skipEntrance = false, title }
           <div className="flex items-center gap-1">
             <button
               onClick={() => setZoom((z) => Math.max(z - 0.5, 0.8))}
-              className="p-2.5 rounded-xl text-white/40 hover:text-white hover:bg-white/[0.06] transition-all"
+              className="p-2.5 rounded-xl text-white/70 hover:text-white hover:bg-white/[0.06] transition-all"
               title="Zoom out"
             >
               <ZoomOut size={16} />
             </button>
             <button
               onClick={() => setZoom((z) => Math.min(z + 0.5, 8))}
-              className="p-2.5 rounded-xl text-white/40 hover:text-white hover:bg-white/[0.06] transition-all"
+              className="p-2.5 rounded-xl text-white/70 hover:text-white hover:bg-white/[0.06] transition-all"
               title="Zoom in"
             >
               <ZoomIn size={16} />
             </button>
             <button
               onClick={resetView}
-              className="p-2.5 rounded-xl text-white/40 hover:text-white hover:bg-white/[0.06] transition-all"
+              className="p-2.5 rounded-xl text-white/70 hover:text-white hover:bg-white/[0.06] transition-all"
               title="Reset view"
             >
               <RotateCcw size={16} />
@@ -184,7 +184,7 @@ export function ImageViewer({ src, index, onClose, skipEntrance = false, title }
 
             <button
               onClick={toggleFullscreen}
-              className="p-2.5 rounded-xl text-white/40 hover:text-white hover:bg-white/[0.06] transition-all"
+              className="p-2.5 rounded-xl text-white/70 hover:text-white hover:bg-white/[0.06] transition-all"
               title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
             >
               {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
@@ -192,7 +192,7 @@ export function ImageViewer({ src, index, onClose, skipEntrance = false, title }
 
             <button
               onClick={onClose}
-              className="p-2.5 rounded-xl text-white/40 hover:text-white hover:bg-white/[0.06] transition-all"
+              className="p-2.5 rounded-xl text-white/70 hover:text-white hover:bg-white/[0.06] transition-all"
               title="Close (Esc)"
             >
               <X size={18} />
@@ -202,7 +202,7 @@ export function ImageViewer({ src, index, onClose, skipEntrance = false, title }
 
         {/* ── Image viewport ── */}
         <motion.div
-          initial={{ opacity: skipEntrance ? 1 : 0, scale: skipEntrance ? 1 : 0.92 }}
+          initial={{ opacity: 0, scale: 0.92 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: imageDelay, duration: imageDuration, ease: [0.22, 1, 0.36, 1] }}
           className="flex-1 overflow-hidden flex items-center justify-center p-6 md:p-12"
@@ -234,7 +234,7 @@ export function ImageViewer({ src, index, onClose, skipEntrance = false, title }
           transition={{ delay: hintDelay, duration: 0.5 }}
           className="py-3 text-center bg-white/[0.02]"
         >
-          <span className="text-[9px] font-mono text-white/15 tracking-widest uppercase">
+          <span className="text-xs font-mono text-white/60 tracking-widest uppercase">
             Scroll to zoom · Double-click to toggle · Drag to pan
           </span>
         </motion.div>

@@ -1,126 +1,276 @@
-import React, { useState, useCallback, useMemo } from "react";
-import { Cosmos3DOrbitGallery } from "../components/Cosmos3DOrbitGallery";
-import { AnimatePresence, motion } from "motion/react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { GalaxyHero } from "../exhibition/GalaxyHero";
+import { FocusCaption } from "../exhibition/ui/FocusCaption";
+import { galleryPictures as galleryImages, pictureSrc } from "../exhibition/data/pictures";
+import { loadVisited, saveVisited } from "../exhibition/state/visited";
+import { markIntroPlayed, shouldPlayIntro } from "../exhibition/state/intro";
+import { AnimatePresence, motion, useMotionValueEvent, useScroll, useTransform } from "motion/react";
 import { ImageViewer } from "../components/ImageViewer";
-import { CosmicCometShader } from "../components/CosmicCometShader";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 
-const galleryImages = [
-  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775520750/Synapses_2k_jpg_zwfdso.jpg", title: "Synapses" },
-  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775520749/New_beginnings_2k_jpg_si1uje.jpg", title: "New beginnings" },
-  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775520749/11.7_dhzshk.jpg", title: "11.7" },
-  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775520749/the_rising_2k_jpg_ozbdmt.jpg", title: "The rising" },
-  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775520749/a_leap_of_faith_2k_jpg_ny8nqg.jpg", title: "A leap of faith" },
-  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775520732/Budha_2k_jpg_z3xdyz.jpg", title: "Finally at peace" },
-  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775520743/reaching_m2ysyd.jpg", title: "Reaching for you" },
-  { url: "https://res.cloudinary.com/doayhlzmx/image/upload/q_auto/f_auto/v1775603942/lust_2k_jpg_wbhou2.jpg", title: "Lust" },
-];
+/** The one scrim behind the galaxy: a vignette, and a darker top so the headline reads over any picture. */
+const GALAXY_SCRIM =
+  "radial-gradient(ellipse at center, transparent 40%, rgba(1,1,1,0.7) 100%), linear-gradient(to bottom, rgba(1,1,1,0.7) 0%, transparent 30%)";
+/** The scrim behind a piece's caption in the grid. */
+const CARD_SCRIM = "linear-gradient(to top, rgba(1,1,1,0.85) 0%, rgba(1,1,1,0.4) 45%, transparent 75%)";
+const TOTAL_LABEL = (n: number) => String(n).padStart(2, "0");
 
 export function TheExhibition() {
+  // The flat viewer: the grid, and any device without WebGL.
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
-  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [showViewer, setShowViewer] = useState(false);
+  // The galaxy's focused picture, and whether it has arrived.
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+  const [arrived, setArrived] = useState(false);
+  const [hiResLoading, setHiResLoading] = useState(false);
+  const [flatMode, setFlatMode] = useState(false);
+  const [visited, setVisited] = useState<Set<number>>(() => loadVisited());
+  const [immersed, setImmersed] = useState(false);
+  const captionTitleRef = useRef<HTMLHeadingElement>(null);
+  // The latest focused piece, for handlers that run from the galaxy's own frame loop.
+  const focusedRef = useRef<number | null>(null);
+  focusedRef.current = focusedIndex;
 
-  // Stable reference — prevents Three.js scene from remounting on every render
-  const imageUrls = useMemo(() => galleryImages.map(g => g.url), []);
+  // Stable references: the galaxy only rebuilds when these change, never on a re-render.
+  const imageUrls = useMemo(() => galleryImages.map(g => pictureSrc(g.url, "scene")), []);
+  const focusUrls = useMemo(() => galleryImages.map(g => pictureSrc(g.url, "focus")), []);
+  const galleryTitles = useMemo(() => galleryImages.map(g => g.title), []);
+  const gridUrls = useMemo(() => galleryImages.map(g => pictureSrc(g.url, "grid")), []);
 
-  // 3D sphere click → fly camera in, then open viewer
+  // ── Scroll scene ──
+  // The hero is a scene the page scrolls through. The stage stays pinned while the scroll moves the camera.
+  const sceneRef = useRef<HTMLElement>(null);
+  const reducedMotion = useReducedMotion();
+  // The first visit of a session opens with the camera pulling in. Reduced motion and repeat visits skip it.
+  const [intro] = useState(() => !reducedMotion && shouldPlayIntro());
+  // The veil is taken out of the page once it has faded, so it costs nothing for the rest of the visit.
+  const [veiled, setVeiled] = useState(intro);
+  useEffect(() => {
+    if (intro) markIntroPlayed();
+  }, [intro]);
+  // Read by the galaxy's render loop every frame. A ref, so scrolling never re-renders React.
+  const scrollProgressRef = useRef(0);
+  const immersedRef = useRef(false);
+  const { scrollYProgress } = useScroll({ target: sceneRef, offset: ["start start", "end end"] });
+  useMotionValueEvent(scrollYProgress, "change", (value) => {
+    scrollProgressRef.current = value;
+    // React only hears about the switch between the two states, not every scroll frame.
+    const next = value > 0.9;
+    if (next !== immersedRef.current) {
+      immersedRef.current = next;
+      setImmersed(next);
+    }
+  });
+  const headlineOpacity = useTransform(scrollYProgress, [0, 0.45], [1, 0]);
+  const headlineY = useTransform(scrollYProgress, [0, 0.45], [0, -48]);
+  const cueOpacity = useTransform(scrollYProgress, [0, 0.12], [1, 0]);
+
+  // Tap in / tap out: scroll the page to the end or the top of the scene.
+  const toggleGalaxy = useCallback(() => {
+    const scene = sceneRef.current;
+    const stage = scene?.firstElementChild as HTMLElement | null | undefined;
+    if (!scene || !stage) return;
+    const sceneTop = scene.getBoundingClientRect().top + window.scrollY;
+    const travel = scene.offsetHeight - stage.offsetHeight;
+    const target = immersedRef.current ? sceneTop : sceneTop + travel;
+    window.scrollTo({ top: Math.max(0, target), behavior: reducedMotion ? "auto" : "smooth" });
+  }, [reducedMotion]);
+
+  // Brings the galaxy into view before a flight, unless it already is. Resolves when the scroll settles.
+  const scrollToGalaxy = useCallback((): Promise<void> => {
+    const scene = sceneRef.current;
+    const stage = scene?.firstElementChild as HTMLElement | null | undefined;
+    if (!scene || !stage) return Promise.resolve();
+    const sceneTop = scene.getBoundingClientRect().top + window.scrollY;
+    const travel = scene.offsetHeight - stage.offsetHeight;
+    if (window.scrollY >= sceneTop - 1 && window.scrollY <= sceneTop + travel + 1) return Promise.resolve();
+    return new Promise((resolve) => {
+      const finish = () => {
+        window.removeEventListener("scrollend", finish);
+        window.clearTimeout(fallback);
+        resolve();
+      };
+      // scrollend is not in every browser, so a timer settles the wait as well.
+      const fallback = window.setTimeout(finish, 1400);
+      window.addEventListener("scrollend", finish);
+      window.scrollTo({ top: sceneTop, behavior: reducedMotion ? "auto" : "smooth" });
+    });
+  }, [reducedMotion]);
+
+  // ── The galaxy's events ──
+  // A tap on a picture: the galaxy flies to it, unless the flat viewer is the only option.
   const handleSphereClick = useCallback((i: number) => {
+    if (flatMode) {
+      setViewerIndex(i);
+      setShowViewer(true);
+      return;
+    }
+    setArrived(false);
     setFocusedIndex(i);
-    setViewerIndex(i);
+  }, [flatMode]);
+
+  const handleArrive = useCallback((i: number) => {
+    setArrived(true);
+    setVisited(prev => {
+      if (prev.has(i)) return prev;
+      const next = new Set(prev).add(i);
+      saveVisited(next);
+      return next;
+    });
   }, []);
 
-  // Gallery grid click → open viewer directly (no fly-in)
+  const handleFlyOutComplete = useCallback(() => {
+    setArrived(false);
+  }, []);
+
+  const handleRequestClose = useCallback(() => {
+    setArrived(false);
+    setFocusedIndex(null);
+  }, []);
+
+  // Previous and next keep the same focused view and move the camera to the neighbour.
+  const handleStep = useCallback((direction: -1 | 1) => {
+    const current = focusedRef.current;
+    if (current === null) return;
+    const count = galleryImages.length;
+    setArrived(false);
+    setFocusedIndex((current + direction + count) % count);
+  }, []);
+
+  const handleHiResState = useCallback((_index: number, state: "loading" | "ready") => {
+    setHiResLoading(state === "loading");
+  }, []);
+
+  const handleUnsupported = useCallback(() => setFlatMode(true), []);
+
+  // When a piece arrives, the caption takes focus, so a keyboard user can use it straight away.
+  useEffect(() => {
+    if (arrived) captionTitleRef.current?.focus({ preventScroll: true });
+  }, [arrived]);
+
+  // A grid click takes the visitor to the galaxy, and flies the camera to that piece, as a tap in the sky does.
   const handleGridClick = useCallback((i: number) => {
-    setViewerIndex(i);
-    setShowViewer(true);
-  }, []);
+    if (flatMode) {
+      setViewerIndex(i);
+      setShowViewer(true);
+      return;
+    }
+    scrollToGalaxy().then(() => handleSphereClick(i));
+  }, [flatMode, scrollToGalaxy, handleSphereClick]);
 
-  // Three.js fly-in complete → show the 2D viewer overlay
-  const handleFlyInComplete = useCallback(() => {
-    setShowViewer(true);
-  }, []);
-
-  // User closes the viewer → hide overlay, start fly-out if we flew in
+  // User closes the flat viewer.
   const handleViewerClose = useCallback(() => {
     setShowViewer(false);
-    if (focusedIndex !== null) {
-      // Was a 3D fly-in — trigger fly-out
-      setFocusedIndex(null);
-    } else {
-      // Was a grid click — just close
-      setViewerIndex(null);
-    }
-  }, [focusedIndex]);
-
-  // Three.js fly-out complete → reset everything
-  const handleFlyOutComplete = useCallback(() => {
     setViewerIndex(null);
   }, []);
 
   return (
     <main className="relative z-10 flex-1 w-full flex flex-col">
-      {/* ═══ HERO: 3D ORBIT GALLERY ══════════════════════════════════ */}
-      <section className="relative w-full h-[100vh] -mt-[73px]">
-        {/* Overlay text */}
-        <div className="absolute top-24 left-0 right-0 z-10 p-6 pointer-events-none">
-          <motion.h1
-            initial={{ opacity: 0, y: 30 }}
-            animate={focusedIndex !== null ? { opacity: 0, y: -20 } : { opacity: 1, y: 0 }}
-            transition={{ duration: focusedIndex !== null ? 0.8 : 1.2, ease: [0.22, 1, 0.36, 1] }}
-            className="max-w-[750px] mx-auto text-white text-center px-6 md:text-6xl text-4xl text-balance tracking-tight font-normal leading-[1.15]"
-            style={{ fontFamily: "'Instrument Serif', serif" }}
-          >
-            Our stories are united. They live on beyond the walls and doors of our souls. There is only one take. Capture yours.
-          </motion.h1>
-        </div>
-
-        {/* Bottom gradient fade */}
-        <div className="absolute bottom-0 left-0 right-0 h-69 bg-gradient-to-t from-[#010101] to-transparent z-10 pointer-events-none" />
-
-        {/* Subtle vignette */}
-        <div
-          className="absolute inset-0 z-[5] pointer-events-none"
-          style={{ background: "radial-gradient(ellipse at center, transparent 40%, rgba(1,1,1,0.7) 100%)" }}
-        />
-
-        {/* Cosmic comet shader - deepest background layer */}
-        <div className="absolute inset-0 z-[1] opacity-60 pointer-events-none">
-          <CosmicCometShader />
-        </div>
-
-        {/* 3D Orbit Gallery - above shader */}
-        <div className="absolute inset-0 z-[3]">
-          <Cosmos3DOrbitGallery
-            images={imageUrls}
-            onImageClick={handleSphereClick}
-            focusedIndex={focusedIndex}
-            onFlyInComplete={handleFlyInComplete}
-            onFlyOutComplete={handleFlyOutComplete}
-          />
-        </div>
-
-        {/* Bottom scroll zone gradient - hints at the scrollable area */}
-        <div
-          className="absolute bottom-0 left-0 right-0 z-[15] h-[30%]"
-          style={{ background: "linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.35) 50%, rgba(0,0,0,0.7) 100%)" }}
-        />
-
-        {/* Scroll indicator */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: focusedIndex !== null ? 0 : 1 }}
-          transition={{ delay: focusedIndex !== null ? 0 : 2, duration: focusedIndex !== null ? 0.5 : 1 }}
-          className="absolute bottom-[16%] left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 pointer-events-none"
-        >
-          <span className="text-[9px] font-mono text-white/20 tracking-widest uppercase">Scroll to explore</span>
+      {/* ═══ HERO: THE GALAXY. The page scrolls through this scene while the stage stays pinned. ═══ */}
+      <section ref={sceneRef} aria-label="The galaxy" className="relative w-full h-[260svh] -mt-[var(--header-h)]">
+        <div className="sticky top-0 w-full h-[100svh] overflow-hidden">
+          {/* Overlay text */}
           <motion.div
-            animate={{ y: [0, 6, 0] }}
-            transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}
-            className="w-4 h-7 rounded-full border border-white/15 flex items-start justify-center p-1"
+            style={{ opacity: headlineOpacity, y: headlineY }}
+            className="absolute top-24 left-0 right-0 z-10 p-6 pointer-events-none"
           >
-            <div className="w-1 h-1.5 rounded-full bg-white/30" />
+            <motion.h1
+              initial={{ opacity: 0, y: 30 }}
+              animate={focusedIndex !== null ? { opacity: 0, y: -20 } : { opacity: 1, y: 0 }}
+              transition={{ duration: focusedIndex !== null ? 0.8 : 1.2, ease: [0.22, 1, 0.36, 1] }}
+              className="max-w-[750px] mx-auto text-white text-center px-6 md:text-6xl text-4xl text-balance tracking-tight font-normal leading-[1.15]"
+              style={{ fontFamily: "'Instrument Serif', serif" }}
+            >
+              Our stories are united. They live on beyond the walls and doors of our souls. There is only one take. Capture yours.
+            </motion.h1>
           </motion.div>
-        </motion.div>
+
+          {/* The scrim behind the headline and the galaxy */}
+          <div className="absolute inset-0 z-[5] pointer-events-none" style={{ background: GALAXY_SCRIM }} />
+
+          {/* The galaxy: its own nebula, disc and pictures */}
+          <div className="absolute inset-0 z-[3]">
+            <GalaxyHero
+              images={imageUrls}
+              focusImages={focusUrls}
+              titles={galleryTitles}
+              visited={visited}
+              focusedIndex={focusedIndex}
+              onImageClick={handleSphereClick}
+              onArrive={handleArrive}
+              onFlyOutComplete={handleFlyOutComplete}
+              onRequestClose={handleRequestClose}
+              onStep={handleStep}
+              onHiResState={handleHiResState}
+              onUnsupported={handleUnsupported}
+              scrollProgressRef={scrollProgressRef}
+              intro={intro}
+              reducedMotion={reducedMotion}
+            />
+          </div>
+
+          {/* The first-visit opening: the galaxy comes out of black as the camera pulls in */}
+          {veiled && (
+            <motion.div
+              aria-hidden="true"
+              initial={{ opacity: 1 }}
+              animate={{ opacity: 0 }}
+              onAnimationComplete={() => setVeiled(false)}
+              transition={{ duration: 2.4, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              className="pointer-events-none absolute inset-0 z-[6] bg-[#010101]"
+            />
+          )}
+
+          {/* The bottom dock: the one control for entering the galaxy, with the scroll cue beneath it */}
+          <div className="absolute inset-x-0 bottom-[4%] z-30 flex flex-col items-center gap-5 pointer-events-none">
+            <motion.button
+              type="button"
+              onClick={toggleGalaxy}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: focusedIndex !== null ? 0 : 1 }}
+              transition={{ delay: focusedIndex !== null ? 0 : 2.2, duration: 0.8 }}
+              style={{ pointerEvents: focusedIndex !== null ? "none" : "auto" }}
+              className="px-5 py-2.5 rounded-full border border-white/20 bg-white/[0.04] backdrop-blur-md text-xs font-mono text-white/80 hover:text-white hover:border-white/40 hover:bg-white/10 transition-colors tracking-widest uppercase"
+            >
+              {immersed ? "Back to overview" : "Enter the galaxy"}
+            </motion.button>
+
+            <motion.div style={{ opacity: cueOpacity }}>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: focusedIndex !== null ? 0 : 1 }}
+                transition={{ delay: focusedIndex !== null ? 0 : 2, duration: focusedIndex !== null ? 0.5 : 1 }}
+                className="flex flex-col items-center gap-2"
+              >
+                <span className="text-xs font-mono text-white/60 tracking-widest uppercase">Scroll to explore</span>
+                <motion.div
+                  animate={reducedMotion ? undefined : { y: [0, 6, 0] }}
+                  transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}
+                  className="w-4 h-7 rounded-full border border-white/30 flex items-start justify-center p-1"
+                >
+                  <div className="w-1 h-1.5 rounded-full bg-white/60" />
+                </motion.div>
+              </motion.div>
+            </motion.div>
+          </div>
+
+          {/* The focused piece's caption. The picture is the viewer; this only names it and offers the controls. */}
+          <AnimatePresence>
+            {focusedIndex !== null && arrived && !flatMode && (
+              <FocusCaption
+                key="focus-caption"
+                ref={captionTitleRef}
+                number={focusedIndex + 1}
+                total={galleryImages.length}
+                title={galleryImages[focusedIndex].title}
+                loading={hiResLoading}
+                onPrevious={() => handleStep(-1)}
+                onNext={() => handleStep(1)}
+                onClose={handleRequestClose}
+              />
+            )}
+          </AnimatePresence>
+        </div>
       </section>
 
       {/* ═══ GALLERY GRID ═══════════════════════════════════════════ */}
@@ -138,41 +288,53 @@ export function TheExhibition() {
           >
             The Gallery
           </h2>
-          <p className="text-[11px] font-mono text-white/30 tracking-[0.2em] uppercase">
+          <p className="text-xs font-mono text-white/60 tracking-[0.2em] uppercase">
             A curated collection of experiences
           </p>
         </motion.div>
 
+        {/* Each card is a button: a tap or Enter flies the galaxy to that piece, as a tap in the sky does. */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {galleryImages.map((img, i) => (
-            <motion.div
+            <motion.button
               key={img.title}
+              type="button"
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-50px" }}
               transition={{ duration: 0.6, delay: i * 0.08 }}
-              className="group relative aspect-[1754/2481] overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02] cursor-pointer"
               onClick={() => handleGridClick(i)}
+              className="group relative block w-full aspect-[1754/2481] overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02] text-left cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
             >
+              {/* The caption names the piece, so the picture is decoration for screen readers. */}
               <img
-                src={img.url}
-                alt={img.title}
-                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                src={gridUrls[i]}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                 loading="lazy"
                 crossOrigin="anonymous"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="absolute bottom-3 left-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-500 translate-y-2 group-hover:translate-y-0">
-                <span className="text-[9px] font-mono text-white/60 tracking-widest uppercase">
-                  {img.title}
+              <span aria-hidden="true" className="absolute inset-0 pointer-events-none" style={{ background: CARD_SCRIM }} />
+              <span className="absolute top-3 left-3 text-xs font-mono tracking-widest text-white/80">
+                {TOTAL_LABEL(i + 1)} / {TOTAL_LABEL(galleryImages.length)}
+              </span>
+              {visited.has(i) && (
+                <span className="absolute top-3 right-3 rounded-full border border-amber-200/40 bg-black/40 px-2.5 py-1 text-xs font-mono tracking-widest text-amber-100 uppercase backdrop-blur-md">
+                  Viewed
                 </span>
-              </div>
-            </motion.div>
+              )}
+              <span
+                className="absolute bottom-4 left-4 right-4 text-xl leading-tight text-white"
+                style={{ fontFamily: "'Instrument Serif', serif" }}
+              >
+                {img.title}
+              </span>
+            </motion.button>
           ))}
         </div>
       </section>
 
-      {/* ═══ FULLSCREEN IMAGE VIEWER ══════════════════════════════ */}
+      {/* ═══ FLAT IMAGE VIEWER: the grid, and devices without WebGL ═══════════════ */}
       <AnimatePresence>
         {showViewer && viewerIndex !== null && (
           <ImageViewer
@@ -181,7 +343,6 @@ export function TheExhibition() {
             index={viewerIndex}
             title={galleryImages[viewerIndex].title}
             onClose={handleViewerClose}
-            skipEntrance={focusedIndex !== null}
           />
         )}
       </AnimatePresence>
